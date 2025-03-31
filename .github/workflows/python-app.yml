@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: [3.9]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        python -m pip install pyoxidizer
+        pip install -r emulator/requirements.txt
+
+    - name: Create pyoxidizer.toml
+      run: |
+        cat <<EOF > pyoxidizer.toml
+        [package]
+        name = "emulator"
+        version = "0.81"
+
+        [python_distribution]
+        extend_pydoc_path = true
+
+        [build_steps.configure]
+        command = "configure"
+
+        [build_steps.compile]
+        command = "compile"
+
+        [build_steps.package]
+        command = "package"
+
+        [build_steps.install]
+        command = "install"
+
+        [targets.console-executable]
+        name = "emulator"
+        main_module = "emulator"
+        module_path = "emulator"
+        EOF
+
+    - name: Run PyOxidizer Build
+      run: pyoxidizer build
+
+    - name: Create Release Archive (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p release
+        cp target/release/emulator release/emulator
+        tar czvf release/emulator-linux.tar.gz -C release emulator
+
+    - name: Create Release Archive (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        mkdir -p release
+        cp target/release/emulator.exe release/emulator.exe
+        Compress-Archive -Path release/emulator.exe -DestinationPath release/emulator-windows.zip
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: emulator-builds
+        path: release/
